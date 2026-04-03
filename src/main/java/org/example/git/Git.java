@@ -45,4 +45,13 @@ public class Git {
     public static String[] abortarMerge() {
         return new String[]{ "git", "merge", "--abort" };
     }
+
+    /**
+     * Força a limpeza do índice e do working tree, descartando qualquer
+     * conflito pendente. Deve ser chamado antes de um novo checkout para
+     * garantir que o índice esteja limpo.
+     */
+    public static String[] resetForced() {
+        return new String[]{ "git", "reset", "--hard", "HEAD" };
+    }
 }

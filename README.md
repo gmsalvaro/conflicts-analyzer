@@ -1,6 +1,6 @@
 # conflicts-analyzer
 
-Ferramenta de linha de comando que analisa um **merge commit** de um repositório Git e detecta todos os **conflitos de merge** que ocorreram, exibindo os chunks em conflito com seus números de linha.
+Ferramenta de linha de comando que analisa um **merge commit** de um repositório Git e detecta todos os **conflitos de merge**, emitindo os resultados em **JSON estruturado** no `stdout` — ideal para ser consumida como subprocesso por outro programa.
 
 ---
 
@@ -13,7 +13,7 @@ Dado o hash de um merge commit, a ferramenta:
 3. Tenta mergear o **parent2** sem commitar (`git merge --no-commit --no-ff <parent2>`)
 4. Se houve conflitos, lista os **arquivos em conflito** (`git diff --name-only --diff-filter=U`)
 5. Lê cada arquivo conflitado e extrai os **chunks** delimitados pelos marcadores `<<<<<<< / ======= / >>>>>>>`
-6. Exibe arquivo, conteúdo do chunk e linhas de início/fim
+6. Emite um JSON completo no `stdout` com commit, arquivos e chunks
 7. **Restaura o repositório** ao estado original (`git merge --abort` + `git checkout <HEAD original>`)
 
 > O repositório sempre volta ao seu estado original após a análise.
@@ -31,7 +31,7 @@ Dado o hash de um merge commit, a ferramenta:
 ## Compilação
 
 ```bash
-mvn clean package
+mvn clean package -DskipTests
 ```
 
 O JAR executável será gerado em `target/conflicts-analyzer-1.0-SNAPSHOT.jar`.
@@ -49,35 +49,80 @@ java -jar target/conflicts-analyzer-1.0-SNAPSHOT.jar <hash_do_commit> <caminho_d
 | `<hash_do_commit>`      | Hash SHA do merge commit a ser analisado               |
 | `<caminho_do_repositório>` | Caminho absoluto para o repositório Git local       |
 
-### Exemplo
+---
 
-```bash
-java -jar target/conflicts-analyzer-1.0-SNAPSHOT.jar \
-  2324cc140b3eaef25919446f30decc85f2742d18 \
-  "C:\projetos\meu-repo"
+## Saída (stdout / stderr)
+
+| Stream   | Conteúdo                                                         |
+|----------|------------------------------------------------------------------|
+| `stdout` | JSON estruturado com o resultado da análise                      |
+| `stderr` | Mensagens de log e diagnóstico (prefixo `[conflicts-analyzer]`) |
+
+### Exit codes
+
+| Código | Significado                          |
+|--------|--------------------------------------|
+| `0`    | Merge sem conflitos                  |
+| `1`    | Conflitos encontrados (JSON no stdout) |
+| `2`    | Erro de execução (mensagem no stderr) |
+
+---
+
+## Formato JSON de saída
+
+### Sem conflitos (exit 0)
+
+```json
+{
+  "commit": "2324cc140b3eaef25919446f30decc85f2742d18",
+  "hasConflicts": false,
+  "conflictedFiles": []
+}
 ```
 
-### Saída esperada — sem conflitos
+### Com conflitos (exit 1)
 
+```json
+{
+  "commit": "2324cc140b3eaef25919446f30decc85f2742d18",
+  "hasConflicts": true,
+  "conflictedFiles": [
+    {
+      "filePath": "src/main/java/com/example/Foo.java",
+      "conflictChunks": [
+        {
+          "startLine": 42,
+          "endLine": 46,
+          "content": "<<<<<<< HEAD\n    int x = 1;\n=======\n    int x = 2;\n>>>>>>> feature-branch\n"
+        }
+      ]
+    }
+  ]
+}
 ```
-Simulating merge for commit 2324cc... in repository C:\projetos\meu-repo
-Merge simulated successfully. No conflicts detected.
-```
 
-### Saída esperada — com conflitos
+---
 
-```
-Simulating merge for commit 2324cc... in repository C:\projetos\meu-repo
-Merge simulated with conflicts. Conflicted files:
-File: src/main/java/com/example/Foo.java
-Chunk: <<<<<<< HEAD
-    int x = 1;
-=======
-    int x = 2;
->>>>>>> feature-branch
+## Consumindo como subprocesso (exemplo em Java)
 
-Start Line: 42
-End Line: 46
+```java
+ProcessBuilder pb = new ProcessBuilder(
+    "java", "-jar", "conflicts-analyzer.jar",
+    commitHash, repoPath
+);
+pb.redirectError(ProcessBuilder.Redirect.INHERIT); // stderr → console
+Process proc = pb.start();
+
+String json = new String(proc.getInputStream().readAllBytes());
+int exitCode = proc.waitFor();
+
+if (exitCode == 0) {
+    // sem conflitos
+} else if (exitCode == 1) {
+    // parsear json com os conflitos
+} else {
+    // erro — verificar stderr
+}
 ```
 
 ---
@@ -92,13 +137,15 @@ conflicts-analyzer/
 │   │   ├── git/
 │   │   │   └── Git.java                     # Fábrica de comandos Git
 │   │   ├── model/
-│   │   │   ├── Chunk.java                   # Representa um bloco de conflito
-│   │   │   └── ConflictFile.java            # Representa um arquivo com conflitos
+│   │   │   ├── Chunk.java                   # Represents a conflict block
+│   │   │   ├── ConflictFile.java            # Represents a file with conflicts
+│   │   │   └── ConflictResult.java          # Top-level result (commit + files)
 │   │   └── service/
-│   │       ├── ConflictParser.java          # Lê arquivos e extrai chunks de conflito
-│   │       ├── GitProcessRunner.java        # Executa processos Git via ProcessBuilder
+│   │       ├── ConflictParser.java          # Lê arquivos e extrai chunks
+│   │       ├── GitProcessRunner.java        # Executa processos Git
+│   │       ├── JsonSerializer.java          # Serializa resultado para JSON
 │   │       ├── MergeService.java            # Orquestra a simulação do merge
-│   │       └── ProcessResult.java           # Encapsula exitCode + output de um processo
+│   │       └── ProcessResult.java           # Encapsula exitCode + output
 │   └── test/java/org/example/
 │       ├── model/
 │       │   └── ConflictFileTest.java
@@ -111,8 +158,6 @@ conflicts-analyzer/
 ---
 
 ## Testes
-
-Execute os testes unitários com:
 
 ```bash
 mvn test
@@ -131,5 +176,5 @@ mvn test
 ## Limitações conhecidas
 
 - Suporta apenas **merge commits** (commits com dois parents). Commits normais ou de rebase resultarão em erro informativo.
-- O repositório precisa estar em um estado limpo (sem mudanças não commitadas) antes de executar a ferramenta, pois o `git checkout` pode falhar caso contrário.
+- O repositório precisa estar em um estado limpo (sem mudanças não commitadas) antes de executar a ferramenta.
 - Arquivos binários em conflito são listados mas não têm chunks extraíveis.
