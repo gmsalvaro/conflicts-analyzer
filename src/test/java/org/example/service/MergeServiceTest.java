@@ -31,18 +31,23 @@ class MergeServiceTest {
     }
 
     /**
-     * Configura o mock para simular uma sequência de chamadas durante simulateMerge():
+     * Configura o mock para simular uma sequência de chamadas durante simulateMerge()
+     * seguindo a ordem corrigida (Fix 1):
      *  1ª chamada → git rev-parse HEAD  (retorna HEAD_HASH)
-     *  2ª chamada → git log ... (retorna os parents)
-     *  3ª chamada → git checkout parent1 (retorna exitCode 0)
-     *  4ª chamada → git merge --no-commit (retorna mergeExitCode)
+     *  2ª chamada → git log ...         (retorna os parents)
+     *  3ª chamada → git merge --abort   (no-op, retorna 0)
+     *  4ª chamada → git reset --hard    (retorna 0)
+     *  5ª chamada → git checkout parent1 (retorna exitCode 0)
+     *  6ª chamada → git merge --no-commit (retorna mergeExitCode)
      */
     private void setupSimulateMerge(int mergeExitCode) {
         when(runner.runProcess(any()))
-            .thenReturn(new ProcessResult(0, HEAD_HASH))             // 1: rev-parse HEAD
-            .thenReturn(new ProcessResult(0, PARENT1 + " " + PARENT2)) // 2: git log parents
-            .thenReturn(new ProcessResult(0, ""))                    // 3: checkout parent1
-            .thenReturn(new ProcessResult(mergeExitCode, mergeExitCode == 0 ? "" : "CONFLICT")); // 4: merge
+            .thenReturn(new ProcessResult(0, HEAD_HASH))                                // 1: rev-parse HEAD
+            .thenReturn(new ProcessResult(0, PARENT1 + " " + PARENT2))                  // 2: git log parents
+            .thenReturn(new ProcessResult(0, ""))                                        // 3: merge --abort
+            .thenReturn(new ProcessResult(0, ""))                                        // 4: reset --hard
+            .thenReturn(new ProcessResult(0, ""))                                        // 5: checkout parent1
+            .thenReturn(new ProcessResult(mergeExitCode, mergeExitCode == 0 ? "" : "CONFLICT")); // 6: merge
     }
 
     @Test
@@ -108,15 +113,16 @@ class MergeServiceTest {
         setupSimulateMerge(1);
         mergeService.simulateMerge();
 
-        // 5ª chamada → abort, 6ª → checkout original HEAD
+        // 5ª chamada → abort, 6ª → reset --hard, 7ª → checkout HEAD original
         when(runner.runProcess(any()))
             .thenReturn(new ProcessResult(0, "")) // merge --abort
+            .thenReturn(new ProcessResult(0, "")) // git reset --hard HEAD
             .thenReturn(new ProcessResult(0, "")); // checkout HEAD original
 
         assertDoesNotThrow(() -> mergeService.abortMerge(),
             "abortMerge não deve lançar exceção");
 
-        // Deve ter chamado runProcess pelo menos mais 2 vezes (abort + checkout)
-        verify(runner, atLeast(6)).runProcess(any());
+        // Deve ter chamado runProcess pelo menos 7 vezes (4 simulateMerge + 3 abortMerge)
+        verify(runner, atLeast(7)).runProcess(any());
     }
 }

@@ -13,12 +13,12 @@ import java.util.List;
 
 /**
  * Exit codes:
- *   0 — merge simulated successfully, no conflicts
- *   1 — conflicts found (JSON with details printed to stdout)
- *   2 — error (message printed to stderr)
+ * 0 — merge simulated successfully, no conflicts
+ * 1 — conflicts found (JSON with details printed to stdout)
+ * 2 — error (message printed to stderr)
  *
- * stdout  → JSON result (machine-readable)
- * stderr  → diagnostic / log messages (human-readable)
+ * stdout → JSON result (machine-readable)
+ * stderr → diagnostic / log messages (human-readable)
  */
 public class Main {
     public static void main(String[] args) {
@@ -53,13 +53,13 @@ public class Main {
                 System.exit(0);
             }
 
-            // Conflicts found — collect and parse all conflicted files
             List<String> conflictedPaths = mergeService.getConflictedFiles();
             ConflictParser parser = new ConflictParser(repoDir);
             List<ConflictFile> conflictFiles = new ArrayList<>();
 
             for (String path : conflictedPaths) {
-                if (path.trim().isEmpty()) continue;
+                if (path.trim().isEmpty())
+                    continue;
                 System.err.println("[conflicts-analyzer] Conflicted file: " + path);
                 conflictFiles.add(parser.parseChunks(path));
             }

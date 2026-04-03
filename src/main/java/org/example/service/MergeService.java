@@ -26,29 +26,29 @@ public class MergeService {
         return parents;
     }
 
-    /**
-     * Simula o merge: faz checkout do parent1 e tenta mergear o parent2.
-     * Retorna true se o merge foi limpo (sem conflitos), false caso contrário.
-     */
     public boolean simulateMerge() {
+        // 1. Salva HEAD atual para restaurar no final
         ProcessResult headResult = runner.runProcess(Git.getHead());
         originalHead = headResult.getOutput().trim();
 
-        runner.runProcess(Git.abortarMerge());
-        runner.runProcess(Git.resetForced());
-
+        // 2. Obtém parents ANTES de limpar o índice (falha rápido se não for merge
+        // commit)
         String[] parents = getParents();
         String parent1 = parents[0];
         String parent2 = parents[1];
 
-        // Faz checkout do primeiro parent (base do merge)
+        // 3. Limpa qualquer merge ou conflito pendente de execuções anteriores
+        runner.runProcess(Git.abortarMerge());
+        runner.runProcess(Git.resetForced());
+
+        // 4. Faz checkout do primeiro parent (base do merge)
         ProcessResult checkoutResult = runner.runProcess(Git.checkoutSilencioso(parent1));
         if (checkoutResult.getExitCode() != 0) {
             throw new RuntimeException("Falha ao fazer checkout do parent1 (" + parent1 + "): "
                     + checkoutResult.getOutput());
         }
 
-        // Tenta mergear o segundo parent sem commitar
+        // 5. Tenta mergear o segundo parent sem commitar
         ProcessResult mergeResult = runner.runProcess(Git.mergeSemCommit(parent2));
         return mergeResult.getExitCode() == 0;
     }

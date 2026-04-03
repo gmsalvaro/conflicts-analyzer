@@ -55,12 +55,22 @@ public class JsonSerializer {
     private String quoted(String value) {
         if (value == null)
             return "null";
-        return "\"" + value
+        String escaped = value
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"")
                 .replace("\r", "\\r")
                 .replace("\n", "\\n")
-                .replace("\t", "\\t")
-                + "\"";
+                .replace("\t", "\\t");
+
+        StringBuilder sb = new StringBuilder(escaped.length());
+        for (int i = 0; i < escaped.length(); i++) {
+            char c = escaped.charAt(i);
+            if (c < 0x20) {
+                sb.append(String.format("\\u%04X", (int) c));
+            } else {
+                sb.append(c);
+            }
+        }
+        return "\"" + sb + "\"";
     }
 }

@@ -4,6 +4,7 @@ import org.example.model.Chunk;
 import org.example.model.ConflictFile;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -15,20 +16,28 @@ public class ConflictParser {
         this.workingDirectory = workingDirectory;
     }
 
-    public ConflictFile parseChunks(String relativePath ) {
+    public ConflictFile parseChunks(String relativePath) {
         ConflictFile conflictFile = new ConflictFile(relativePath);
         Path path = new File(workingDirectory, relativePath).toPath();
-        try{
-            List<String> lines = Files.readAllLines(path);
+        try {
+            List<String> lines;
+            try {
+                lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+            } catch (Exception utf8Ex) {
+                lines = Files.readAllLines(path, StandardCharsets.ISO_8859_1);
+            }
+
             StringBuilder currentChunk = new StringBuilder();
             boolean conflicts = false;
+            boolean hasSeparator = false;
             int startLine = 0;
             int endLine = 0;
             int lineCounter = 1;
 
-            for(String line : lines) {
+            for (String line : lines) {
                 if (line.startsWith("<<<<<<<")) {
                     conflicts = true;
+                    hasSeparator = false;
                     currentChunk.setLength(0);
                     startLine = lineCounter;
                 }
@@ -36,21 +45,28 @@ public class ConflictParser {
                 if (conflicts) {
                     currentChunk.append(line).append("\n");
                 }
+
+                if (conflicts && line.startsWith("=======")) {
+                    hasSeparator = true;
+                }
+
                 if (line.startsWith(">>>>>>>")) {
                     conflicts = false;
                     endLine = lineCounter;
-                    Chunk chunk = new Chunk(currentChunk.toString());
-                    chunk.setEndLine(endLine);
-                    chunk.setStartLine(startLine);
-                    conflictFile.addChunk(chunk);
+                    if (hasSeparator) {
+                        Chunk chunk = new Chunk(currentChunk.toString());
+                        chunk.setEndLine(endLine);
+                        chunk.setStartLine(startLine);
+                        conflictFile.addChunk(chunk);
+                    }
+                    hasSeparator = false;
                 }
                 lineCounter++;
             }
 
-        }catch (Exception e){
-                System.out.println("Erro ao ler o arquivo: " + e.getMessage());
-            }
+        } catch (Exception e) {
+            System.err.println("[conflicts-analyzer] Erro ao ler arquivo '" + relativePath + "': " + e.getMessage());
+        }
         return conflictFile;
     }
 }
-
